@@ -1,5 +1,14 @@
 import { Router } from 'express'
+import { Pool } from 'pg'
 import { Log } from '../models/log'
+
+const pool = new Pool({
+  user: 'dev',
+  host: 'localhost',
+  database: 'tagged_logbook',
+  port: 5432,
+  // password: '',
+})
 
 type ReqParams = { logId: string }
 type ReqBody = { date: string; note: string }
@@ -9,7 +18,20 @@ let logs: Log[] = []
 const router = Router()
 
 router.get('/', (req, res, next) => {
-  res.status(200).json({ logs })
+  pool.query('SELECT * FROM notes ORDER BY id ASC', (error, results) => {
+    if (error) throw error
+    res.status(200).json({ logs: results.rows })
+  })
+})
+
+router.get('/:logId', (req, res, next) => {
+  const params = req.params as ReqParams
+  const { logId } = params
+
+  pool.query('SELECT * FROM notes WHERE id = $1', [logId], (error, results) => {
+    if (error) throw error
+    res.status(200).json({ logs: results.rows })
+  })
 })
 
 router.post('/', (req, res, next) => {
