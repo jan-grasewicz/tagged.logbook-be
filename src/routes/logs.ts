@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { Pool } from 'pg'
-import { Log } from '../models/log'
 
+// TODO: move it
 const pool = new Pool({
   user: 'dev',
   host: 'localhost',
@@ -13,14 +13,12 @@ const pool = new Pool({
 type ReqParams = { logId: string }
 type ReqBody = { date: string; note: string }
 
-let logs: Log[] = []
-
 const router = Router()
 
 router.get('/', (req, res, next) => {
   pool.query('SELECT * FROM notes ORDER BY id ASC', (error, results) => {
     if (error) throw error
-    res.status(200).json({ logs: results.rows })
+    return res.status(200).json({ logs: results.rows })
   })
 })
 
@@ -30,7 +28,7 @@ router.get('/:logId', (req, res, next) => {
 
   pool.query('SELECT * FROM notes WHERE id = $1', [logId], (error, results) => {
     if (error) throw error
-    res.status(200).json({ logs: results.rows })
+    return res.status(200).json({ logs: results.rows })
   })
 })
 
@@ -38,16 +36,10 @@ router.post('/', (req, res, next) => {
   const body = req.body as ReqBody
   const { date, note } = body
 
-  const newLog: Log = {
-    id: new Date().toISOString(),
-    date,
-    note,
-    tags: [],
-  }
-
-  logs.push(newLog)
-
-  res.status(201).json({ message: 'Log created', log: newLog })
+  pool.query('INSERT INTO notes (text, date) VALUES ($1, $2) RETURNING *', [note, date], (error, results) => {
+    if (error) throw error
+    return res.status(201).json({ message: 'Log created', log: results.rows[0] })
+  })
 })
 
 router.put('/:logId', (req, res, next) => {
@@ -56,31 +48,32 @@ router.put('/:logId', (req, res, next) => {
   const body = req.body as ReqBody
   const { date, note } = body
 
-  const logIndex = logs.findIndex(({ id }) => id === logId)
+  pool.query(
+    'UPDATE notes SET text = $1, date = $2 WHERE id = $3 RETURNING *',
+    [note, date, logId],
+    (error, results) => {
+      if (error) throw error
+      if (!results.rowCount){
+        return res.status(404).json({ message: 'Log not found', logId })
+      }
 
-  if (logIndex >= 0) {
-    const updatedLog: Log = {
-      id: logId,
-      date,
-      note,
-      tags: [],
+      return res.status(200).json({ message: 'Log updated', log: results.rows[0] })
     }
-
-    logs[logIndex] = updatedLog
-
-    return res.status(200).json({ message: 'Log updated', log: updatedLog })
-  }
-
-  res.status(404).json({ message: 'Log not found' })
+  )
 })
 
 router.delete('/:logId', (req, res, next) => {
   const params = req.params as ReqParams
   const { logId } = params
 
-  logs = logs.filter(({ id }) => id !== logId)
+  pool.query('DELETE FROM notes WHERE id = $1 RETURNING *', [logId], (error, results) => {
+    if (error) throw error
+    if (!results.rowCount){
+      return res.status(404).json({ message: 'Log not found', logId })
+    }
 
-  res.status(200).json({ message: 'Log deleted' })
+    return res.status(200).json({ message: 'Log deleted', log: results.rows[0] })
+  })
 })
 
 export default router
